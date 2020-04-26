@@ -36,13 +36,8 @@
 #include "max30102.h"
 
 #define DEBUG // Uncomment for debug output to the Serial stream
-//#define USE_ADALOGGER // Comment out if you don't have ADALOGGER itself but your MCU still can handle this code
-#define TEST_MAXIM_ALGORITHM // Uncomment if you want to include results returned by the original MAXIM algorithm
+//#define TEST_MAXIM_ALGORITHM // Uncomment if you want to include results returned by the original MAXIM algorithm
 //#define SAVE_RAW_DATA // Uncomment if you want raw data coming out of the sensor saved to SD card. Red signal first, IR second.
-
-#ifdef USE_ADALOGGER
-  #include <SD.h>
-#endif
 
 #ifdef TEST_MAXIM_ALGORITHM
   #include "algorithm.h" 
@@ -50,17 +45,6 @@
 
 // Interrupt pin
 const byte oxiInt = 10; // pin connected to MAX30102 INT
-
-// ADALOGGER pins
-#ifdef USE_ADALOGGER
-  File dataFile;
-  const byte chipSelect = 4;
-  const byte cardDetect = 7;
-  const byte batteryPin = 9;
-  const byte ledPin = 13; // Red LED on ADALOGGER
-  const byte sdIndicatorPin = 8; // Green LED on ADALOGGER
-  bool cardOK;
-#endif
 
 uint32_t elapsedTime,timeStart;
 
@@ -73,18 +57,9 @@ void setup() {
 
   pinMode(oxiInt, INPUT);  //pin D10 connects to the interrupt output pin of the MAX30102
 
-#ifdef USE_ADALOGGER
-  pinMode(cardDetect,INPUT_PULLUP);
-  pinMode(batteryPin,INPUT);
-  pinMode(ledPin,OUTPUT);
-  digitalWrite(ledPin,LOW);
-  pinMode(sdIndicatorPin,OUTPUT);
-  digitalWrite(sdIndicatorPin,LOW);
-#endif
-
   Wire.begin();
 
-#if defined(DEBUG) || !defined(USE_ADALOGGER)
+#if defined(DEBUG)
   // initialize serial communication at 115200 bits per second:
   Serial.begin(115200);
 #endif
@@ -95,81 +70,6 @@ void setup() {
   maxim_max30102_read_reg(REG_INTR_STATUS_1,&uch_dummy);  //Reads/clears the interrupt status register
   maxim_max30102_init();  //initialize the MAX30102
   old_n_spo2=0.0;
-
-#ifdef USE_ADALOGGER
-    // Measure battery voltage
-  float measuredvbat = analogRead(batteryPin);
-  measuredvbat *= 2;    // we divided by 2, so multiply back
-  measuredvbat *= 3.3;  // Multiply by 3.3V, our reference voltage
-  measuredvbat /= 1024; // convert to voltage
-
-  char my_status[20];
-  if(HIGH==digitalRead(cardDetect)) {
-    // we'll use the initialization code from the utility libraries
-    // since we're just testing if the card is working!
-    if(!SD.begin(chipSelect)) {
-      cardOK=false;
-      strncpy(my_status,"CardInit!",9);
-    } else cardOK=true;
-  } else {
-    cardOK=false;
-    strncpy(my_status,"NoSDCard!",9);
-  }
-
-  if(cardOK) {
-    long count=0;
-    char fname[20];
-    do {
-//      if(useClock && now.month()<13 && now.day()<32) {
-//        sprintf(fname,"%d-%d_%d.txt",now.month(),now.day(),++count);
-//      } else {
-        sprintf(fname,"data_%d.txt",++count);
-//      }
-    } while(SD.exists(fname));
-    dataFile = SD.open(fname, FILE_WRITE);
-    strncpy(my_status,fname,19);
-  }
-  
-#ifdef DEBUG
-  while(Serial.available()==0)  //wait until user presses a key
-  {
-    Serial.print(F("Vbatt=\t"));
-    Serial.println(measuredvbat);
-    Serial.println(my_status);
-    Serial.println(dataFile,HEX);
-    Serial.println(F("Press any key to start conversion"));
-    delay(1000);
-  }
-  uch_dummy=Serial.read();
-#endif
-
-  blinkLED(ledPin,cardOK);
-
-  k=0;
-  dataFile.println(F("Vbatt=\t"));
-  dataFile.println(measuredvbat);
-  dataFile.println(my_status);
-#ifdef TEST_MAXIM_ALGORITHM
-  dataFile.print(F("Time[s]\tSpO2\tHR\tSpO2_MX\tHR_MX\tClock\tRatio\tCorr"));
-#else // TEST_MAXIM_ALGORITHM
-  dataFile.print(F("Time[s]\tSpO2\tHR\tClock\tRatio\tCorr"));
-#endif // TEST_MAXIM_ALGORITHM
-#ifdef SAVE_RAW_DATA
-  int32_t i;
-  // These are headers for the red signal
-  for(i=0;i<BUFFER_SIZE;++i) {
-    dataFile.print("\t");
-    dataFile.print(i);
-  }
-  // These are headers for the infrared signal
-  for(i=0;i<BUFFER_SIZE;++i) {
-    dataFile.print("\t");
-    dataFile.print(i);
-  }
-#endif // SAVE_RAW_DATA
-  dataFile.println("");
-
-#else // USE_ADALOGGER
 
   while(Serial.available()==0)  //wait until user presses a key
   {
@@ -196,8 +96,6 @@ void setup() {
   }
 #endif // SAVE_RAW_DATA
   Serial.println("");
-  
-#endif // USE_ADALOGGER
   
   timeStart=millis();
 }
@@ -271,49 +169,7 @@ void loop() {
 #else   // TEST_MAXIM_ALGORITHM
   if(ch_hr_valid && ch_spo2_valid) { 
 #endif // TEST_MAXIM_ALGORITHM
-#ifdef USE_ADALOGGER
-    ++k;
-    dataFile.print(elapsedTime);
-    dataFile.print("\t");
-    dataFile.print(n_spo2);
-    dataFile.print("\t");
-    dataFile.print(n_heart_rate, DEC);
-    dataFile.print("\t");
-#ifdef TEST_MAXIM_ALGORITHM
-    dataFile.print(n_spo2_maxim);
-    dataFile.print("\t");
-    dataFile.print(n_heart_rate_maxim, DEC);
-    dataFile.print("\t");
-#endif // TEST_MAXIM_ALGORITHM
-    dataFile.print(hr_str);
-    dataFile.print("\t");
-    dataFile.print(ratio);
-    dataFile.print("\t");
-    dataFile.print(correl);
-#ifdef SAVE_RAW_DATA
-    // Save raw data for unusual O2 levels
-    for(i=0;i<BUFFER_SIZE;++i)
-    {
-      dataFile.print(F("\t"));
-      dataFile.print(aun_red_buffer[i], DEC);
-    }
-    for(i=0;i<BUFFER_SIZE;++i)
-    {
-      dataFile.print(F("\t"));
-      dataFile.print(aun_ir_buffer[i], DEC);    
-    }
-#endif // SAVE_RAW_DATA
-    dataFile.println("");
-     // Blink green LED to indicate save event
-    digitalWrite(sdIndicatorPin,HIGH);
-    delay(10);
-    digitalWrite(sdIndicatorPin,LOW);
-    // FLush SD buffer every 10 points
-    if(k>=10) {
-      dataFile.flush();
-      k=0;
-    }
-#else // USE_ADALOGGER
+
     Serial.print(elapsedTime);
     Serial.print("\t");
     Serial.print(n_spo2);
@@ -345,7 +201,7 @@ void loop() {
     }
 #endif // SAVE_RAW_DATA
     Serial.println("");
-#endif // USE_ADALOGGER
+
     old_n_spo2=n_spo2;
   }
 }
@@ -367,29 +223,3 @@ void millis_to_hours(uint32_t ms, char* hr_str)
   itoa(secs,istr,10);
   strcat(hr_str,istr);
 }
-
-#ifdef USE_ADALOGGER
-// blink three times if isOK is true, otherwise blink continuously
-void blinkLED(const byte led, bool isOK)
-{
-  byte i;
-  if(isOK) {
-    for(i=0;i<3;++i) {
-      digitalWrite(led,HIGH);
-      delay(200);
-      digitalWrite(led,LOW);
-      delay(200);
-    }
-  } else {
-    while(1) {
-      for(i=0;i<2;++i) {
-        digitalWrite(led,HIGH);
-        delay(50);
-        digitalWrite(led,LOW);
-        delay(50);
-      }
-      delay(500);
-    }
-  }
-}
-#endif
