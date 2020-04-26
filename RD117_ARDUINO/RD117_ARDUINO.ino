@@ -38,9 +38,16 @@
 #define DEBUG // Uncomment for debug output to the Serial stream
 //#define TEST_MAXIM_ALGORITHM // Uncomment if you want to include results returned by the original MAXIM algorithm
 //#define SAVE_RAW_DATA // Uncomment if you want raw data coming out of the sensor saved to SD card. Red signal first, IR second.
+#define SEND_DATA_SIGFOX  //Uncomment if you want raw data to be send over sigfox network
 
 #ifdef TEST_MAXIM_ALGORITHM
   #include "algorithm.h" 
+#endif
+
+#ifdef SEND_DATA_SIGFOX
+  #include <ArduinoLowPower.h>
+  #include <SigFox.h>
+  #include "conversions.h"
 #endif
 
 // Interrupt pin
@@ -53,8 +60,28 @@ uint32_t aun_red_buffer[BUFFER_SIZE];  //red LED sensor data
 float old_n_spo2;  // Previous SPO2 value
 uint8_t uch_dummy,k;
 
-void setup() {
+#ifdef SEND_DATA_SIGFOX
+  /*
+      WARNING - the structure we are going to send MUST
+      be declared "packed" otherwise we'll get padding mismatch
+      on the sent data - see http://www.catb.org/esr/structure-packing/#_structure_alignment_and_padding
+      for more details
+  */
+  typedef struct __attribute__ ((packed)) sigfox_message {
+    uint8_t status;
+    int16_t spo2;
+    uint16_t ratio;
+    uint16_t correl;
+    uint16_t heart_rate;
+    uint8_t lastMessageStatus;
+  } SigfoxMessage;
+  
+  // stub for message which will be sent
+  SigfoxMessage msg;
+#endif // SEND_DATA_SIGFOX
 
+void setup() {
+  uint8_t uch_maxinit_ret = 0;
   pinMode(oxiInt, INPUT);  //pin D10 connects to the interrupt output pin of the MAX30102
 
   Wire.begin();
@@ -64,11 +91,39 @@ void setup() {
   Serial.begin(115200);
 #endif
 
+#ifdef SEND_DATA_SIGFOX
+  if (!SigFox.begin()) {
+    // Something is really wrong, try rebooting
+    // Reboot is useful if we are powering the board using an unreliable power source
+    // (eg. solar panels or other energy harvesting methods)
+    reboot();
+  }
+
+  //Send module to standby until we need to send a message
+  SigFox.end();
+  
+  #ifdef DEBUG
+    // Enable debug prints and LED indication if we are testing
+    SigFox.debug();
+  #endif // DEBUG
+#endif // SEND_DATA_SIGFOX
+
   maxim_max30102_reset(); //resets the MAX30102
   delay(1000);
-
   maxim_max30102_read_reg(REG_INTR_STATUS_1,&uch_dummy);  //Reads/clears the interrupt status register
-  maxim_max30102_init();  //initialize the MAX30102
+  uch_maxinit_ret = maxim_max30102_init();  //initialize the MAX30102
+#ifdef SEND_DATA_SIGFOX
+  msg.status = uch_maxinit_ret;
+#endif
+#ifdef DEBUG
+  if (0 == uch_maxinit_ret) {
+    Serial.println("Sensor MAX30102 init FAIL.");
+  }
+  else {
+    Serial.println("Sensor MAX30102 init SUCCESS.");
+  }
+#endif
+
   old_n_spo2=0.0;
 
   while(Serial.available()==0)  //wait until user presses a key
