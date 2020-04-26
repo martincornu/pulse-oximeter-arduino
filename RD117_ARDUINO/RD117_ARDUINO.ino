@@ -39,6 +39,14 @@
 //#define TEST_MAXIM_ALGORITHM // Uncomment if you want to include results returned by the original MAXIM algorithm
 //#define SAVE_RAW_DATA // Uncomment if you want raw data coming out of the sensor saved to SD card. Red signal first, IR second.
 #define SEND_DATA_SIGFOX  //Uncomment if you want raw data to be send over sigfox network
+#define ONE_SHOT  //Uncomment if you want a single measure + send and then stop program
+
+#ifdef SEND_DATA_SIGFOX
+  #define SPO2_MAX    100
+  #define HR_MAX      250
+  #define RATIO_MAX   1
+  #define CORREL_MAX  1
+#endif
 
 #ifdef TEST_MAXIM_ALGORITHM
   #include "algorithm.h" 
@@ -69,7 +77,7 @@ uint8_t uch_dummy,k;
   */
   typedef struct __attribute__ ((packed)) sigfox_message {
     uint8_t status;
-    int16_t spo2;
+    uint16_t spo2;
     uint16_t ratio;
     uint16_t correl;
     uint16_t heart_rate;
@@ -111,10 +119,11 @@ void setup() {
   maxim_max30102_reset(); //resets the MAX30102
   delay(1000);
   maxim_max30102_read_reg(REG_INTR_STATUS_1,&uch_dummy);  //Reads/clears the interrupt status register
-  uch_maxinit_ret = maxim_max30102_init();  //initialize the MAX30102
+  uch_maxinit_ret = (uint8_t) maxim_max30102_init();  //initialize the MAX30102
+  Serial.println("DEBUG: Max init code ret = " + String(uch_maxinit_ret));
 #ifdef SEND_DATA_SIGFOX
   msg.status = uch_maxinit_ret;
-#endif
+#endif //SEND_DATA_SIGFOX
 #ifdef DEBUG
   if (0 == uch_maxinit_ret) {
     Serial.println("Sensor MAX30102 init FAIL.");
@@ -231,17 +240,62 @@ void loop() {
     Serial.print("\t");
     Serial.print(n_heart_rate, DEC);
     Serial.print("\t");
+  #ifdef SEND_DATA_SIGFOX
+   msg.spo2 = convertoFloatToUInt16(n_spo2, SPO2_MAX);
+   msg.heart_rate = n_heart_rate;
+  #endif //SEND_DATA_SIGFOX
+
 #ifdef TEST_MAXIM_ALGORITHM
     Serial.print(n_spo2_maxim);
     Serial.print("\t");
     Serial.print(n_heart_rate_maxim, DEC);
     Serial.print("\t");
+  #ifdef SEND_DATA_SIGFOX
+   msg.spo2 = convertoFloatToUInt16(n_spo2_maxim, SPO2_MAX);
+   msg.heart_rate = n_heart_rate_maxim;
+  #endif //SEND_DATA_SIGFOX
 #endif //TEST_MAXIM_ALGORITHM
+
     Serial.print(hr_str);
     Serial.print("\t");
     Serial.print(ratio);
     Serial.print("\t");
     Serial.print(correl);
+  #ifdef SEND_DATA_SIGFOX
+    msg.ratio = convertoFloatToUInt16(ratio, RATIO_MAX);
+    msg.correl = convertoFloatToUInt16(correl, CORREL_MAX);
+
+    //TO DELETE - FOR DEBUG
+    Serial.println();
+    Serial.println("Sigfox attributs after conversion to uint:");
+    Serial.print("SPO2 = "); Serial.println(msg.spo2, DEC);
+    Serial.print("HR = "); Serial.println(msg.heart_rate, DEC);
+    Serial.print("RATIO = "); Serial.println(msg.ratio, DEC);
+    Serial.print("CORREL = "); Serial.println(msg.correl, DEC);
+     
+    // Start the module
+    SigFox.begin();
+    // Wait at least 30ms after first configuration (100ms before)
+    delay(100);
+    // Clears all pending interrupts
+    SigFox.status();
+    delay(1);
+    SigFox.beginPacket();
+    SigFox.write((uint8_t*)&msg, 12);
+    msg.lastMessageStatus = SigFox.endPacket();
+    #ifdef DEBUG
+    Serial.println();
+    Serial.println("Sigfox SEND STATUS : " + String(msg.lastMessageStatus));
+    #endif
+    SigFox.end();
+    
+    #ifdef ONE_SHOT
+    // spin forever, so we can test that the backend is behaving correctly
+    while (1) {};
+    #endif
+    
+  #endif //SEND_DATA_SIGFOX
+    
 #ifdef SAVE_RAW_DATA
     // Save raw data for unusual O2 levels
     for(i=0;i<BUFFER_SIZE;++i)
@@ -277,4 +331,9 @@ void millis_to_hours(uint32_t ms, char* hr_str)
   strcat(hr_str,":");
   itoa(secs,istr,10);
   strcat(hr_str,istr);
+}
+
+void reboot() {
+  NVIC_SystemReset();
+  while (1);
 }
