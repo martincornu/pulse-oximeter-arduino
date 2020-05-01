@@ -36,10 +36,9 @@
 #include "max30102.h"
 
 #define DEBUG // Uncomment for debug output to the Serial stream
-//#define TEST_MAXIM_ALGORITHM // Uncomment if you want to include results returned by the original MAXIM algorithm
-//#define SAVE_RAW_DATA // Uncomment if you want raw data coming out of the sensor saved to SD card. Red signal first, IR second.
-#define SEND_DATA_SIGFOX  //Uncomment if you want raw data to be send over sigfox network
+//#define SEND_DATA_SIGFOX  //Uncomment if you want raw data to be send over sigfox network
 #define ONE_SHOT  //Uncomment if you want a single measure + send and then stop program
+#define USE_OLED  //Uncomment if you do not want to use oled display
 
 #ifdef SEND_DATA_SIGFOX
   #define SPO2_MAX    100
@@ -48,14 +47,19 @@
   #define CORREL_MAX  1
 #endif
 
-#ifdef TEST_MAXIM_ALGORITHM
-  #include "algorithm.h" 
+#ifdef USE_OLED
+  #define OLED_I2C_ADDR 0x3C
 #endif
 
 #ifdef SEND_DATA_SIGFOX
   #include <ArduinoLowPower.h>
   #include <SigFox.h>
   #include "conversions.h"
+#endif
+
+#ifdef USE_OLED
+  #include "SSD1306Ascii.h"
+  #include "SSD1306AsciiWire.h"
 #endif
 
 // Interrupt pin
@@ -88,6 +92,10 @@ uint8_t uch_dummy,k;
   SigfoxMessage msg;
 #endif // SEND_DATA_SIGFOX
 
+#ifdef USE_OLED
+  SSD1306AsciiWire oled;
+#endif
+
 void setup() {
   uint8_t uch_maxinit_ret = 0;
   pinMode(oxiInt, INPUT);  //pin D10 connects to the interrupt output pin of the MAX30102
@@ -116,6 +124,11 @@ void setup() {
   #endif // DEBUG
 #endif // SEND_DATA_SIGFOX
 
+#ifdef USE_OLED
+  oled.begin(&Adafruit128x64, OLED_I2C_ADDR);
+  oled.setFont(Adafruit5x7);
+#endif
+
   maxim_max30102_reset(); //resets the MAX30102
   delay(1000);
   maxim_max30102_read_reg(REG_INTR_STATUS_1,&uch_dummy);  //Reads/clears the interrupt status register
@@ -141,24 +154,7 @@ void setup() {
     delay(1000);
   }
   uch_dummy=Serial.read();
-#ifdef TEST_MAXIM_ALGORITHM
-  Serial.print(F("Time[s]\tSpO2\tHR\tSpO2_MX\tHR_MX\tClock\tRatio\tCorr"));
-#else // TEST_MAXIM_ALGORITHM
   Serial.print(F("Time[s]\tSpO2\tHR\tClock\tRatio\tCorr"));
-#endif // TEST_MAXIM_ALGORITHM
-#ifdef SAVE_RAW_DATA
-  int32_t i;
-  // These are headers for the red signal
-  for(i=0;i<BUFFER_SIZE;++i) {
-    Serial.print("\t");
-    Serial.print(i);
-  }
-  // These are headers for the infrared signal
-  for(i=0;i<BUFFER_SIZE;++i) {
-    Serial.print("\t");
-    Serial.print(i);
-  }
-#endif // SAVE_RAW_DATA
   Serial.println("");
   
   timeStart=millis();
@@ -207,64 +203,42 @@ void loop() {
   Serial.println("------");
 #endif // DEBUG
 
-#ifdef TEST_MAXIM_ALGORITHM
-  //calculate heart rate and SpO2 after BUFFER_SIZE samples (ST seconds of samples) using MAXIM's method
-  float n_spo2_maxim;  //SPO2 value
-  int8_t ch_spo2_valid_maxim;  //indicator to show if the SPO2 calculation is valid
-  int32_t n_heart_rate_maxim; //heart rate value
-  int8_t  ch_hr_valid_maxim;  //indicator to show if the heart rate calculation is valid
-  maxim_heart_rate_and_oxygen_saturation(aun_ir_buffer, BUFFER_SIZE, aun_red_buffer, &n_spo2_maxim, &ch_spo2_valid_maxim, &n_heart_rate_maxim, &ch_hr_valid_maxim); 
-#ifdef DEBUG
-  Serial.println("--MX--");
-  Serial.print(elapsedTime);
-  Serial.print("\t");
-  Serial.print(n_spo2_maxim);
-  Serial.print("\t");
-  Serial.print(n_heart_rate_maxim, DEC);
-  Serial.print("\t");
-  Serial.println(hr_str);
-  Serial.println("------");
-#endif // DEBUG
-#endif // TEST_MAXIM_ALGORITHM
-
   //save samples and calculation result to SD card
-#ifdef TEST_MAXIM_ALGORITHM
-  if(ch_hr_valid && ch_spo2_valid || ch_hr_valid_maxim && ch_spo2_valid_maxim) {
-#else   // TEST_MAXIM_ALGORITHM
   if(ch_hr_valid && ch_spo2_valid) { 
-#endif // TEST_MAXIM_ALGORITHM
-
     Serial.print(elapsedTime);
     Serial.print("\t");
     Serial.print(n_spo2);
     Serial.print("\t");
     Serial.print(n_heart_rate, DEC);
     Serial.print("\t");
+  
   #ifdef SEND_DATA_SIGFOX
    msg.spo2 = convertoFloatToUInt16(n_spo2, SPO2_MAX);
    msg.heart_rate = n_heart_rate;
   #endif //SEND_DATA_SIGFOX
-
-#ifdef TEST_MAXIM_ALGORITHM
-    Serial.print(n_spo2_maxim);
-    Serial.print("\t");
-    Serial.print(n_heart_rate_maxim, DEC);
-    Serial.print("\t");
-  #ifdef SEND_DATA_SIGFOX
-   msg.spo2 = convertoFloatToUInt16(n_spo2_maxim, SPO2_MAX);
-   msg.heart_rate = n_heart_rate_maxim;
-  #endif //SEND_DATA_SIGFOX
-#endif //TEST_MAXIM_ALGORITHM
-
+  
     Serial.print(hr_str);
     Serial.print("\t");
     Serial.print(ratio);
     Serial.print("\t");
     Serial.print(correl);
+
+  #ifdef USE_OLED  
+    oled.clear();
+    oled.println("MEASURE DONE!");
+    oled.println();
+    oled.set2X();
+    oled.print("Spo2:");
+    oled.println(n_spo2);
+    oled.print("HR:");
+    oled.print(n_heart_rate);
+    oled.set1X();
+  #endif // USE_OLED 
+    
   #ifdef SEND_DATA_SIGFOX
     msg.ratio = convertoFloatToUInt16(ratio, RATIO_MAX);
     msg.correl = convertoFloatToUInt16(correl, CORREL_MAX);
-
+    
     //TO DELETE - FOR DEBUG
     Serial.println();
     Serial.println("Sigfox attributs after conversion to uint:");
@@ -272,7 +246,7 @@ void loop() {
     Serial.print("HR = "); Serial.println(msg.heart_rate, DEC);
     Serial.print("RATIO = "); Serial.println(msg.ratio, DEC);
     Serial.print("CORREL = "); Serial.println(msg.correl, DEC);
-     
+    
     // Start the module
     SigFox.begin();
     // Wait at least 30ms after first configuration (100ms before)
@@ -287,28 +261,14 @@ void loop() {
     Serial.println();
     Serial.println("Sigfox SEND STATUS : " + String(msg.lastMessageStatus));
     #endif
-    SigFox.end();
-    
-    #ifdef ONE_SHOT
+    SigFox.end(); 
+  #endif //SEND_DATA_SIGFOX 
+
+  #ifdef ONE_SHOT
     // spin forever, so we can test that the backend is behaving correctly
     while (1) {};
-    #endif
-    
-  #endif //SEND_DATA_SIGFOX
-    
-#ifdef SAVE_RAW_DATA
-    // Save raw data for unusual O2 levels
-    for(i=0;i<BUFFER_SIZE;++i)
-    {
-      Serial.print(F("\t"));
-      Serial.print(aun_red_buffer[i], DEC);
-    }
-    for(i=0;i<BUFFER_SIZE;++i)
-    {
-      Serial.print(F("\t"));
-      Serial.print(aun_ir_buffer[i], DEC);    
-    }
-#endif // SAVE_RAW_DATA
+  #endif
+  
     Serial.println("");
 
     old_n_spo2=n_spo2;
