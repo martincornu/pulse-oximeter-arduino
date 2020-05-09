@@ -133,21 +133,43 @@ void setup() {
   delay(1000);
   maxim_max30102_read_reg(REG_INTR_STATUS_1,&uch_dummy);  //Reads/clears the interrupt status register
   uch_maxinit_ret = (uint8_t) maxim_max30102_init();  //initialize the MAX30102
-  Serial.println("DEBUG: Max init code ret = " + String(uch_maxinit_ret));
 #ifdef SEND_DATA_SIGFOX
-  msg.status = uch_maxinit_ret;
+  msg.status = uch_maxinit_ret; 
 #endif //SEND_DATA_SIGFOX
-#ifdef DEBUG
+
   if (0 == uch_maxinit_ret) {
+    #ifdef DEBUG
     Serial.println("Sensor MAX30102 init FAIL.");
+    #endif
+    #ifdef USE_OLED  
+    oled.clear();
+    oled.println();
+    oled.println();
+    oled.set2X();
+    oled.println("Sensor init");
+    oled.println("fail");
+    oled.set1X();
+    oled.println("Please reboot");
+    #endif // USE_OLED 
   }
   else {
+    #ifdef DEBUG
     Serial.println("Sensor MAX30102 init SUCCESS.");
+    #endif
+    #ifdef USE_OLED  
+    oled.clear();
+    oled.println();
+    oled.println();
+    oled.set2X();
+    oled.println("Measure");
+    oled.println("in");
+    oled.println("progress..");
+    #endif // USE_OLED 
   }
-#endif
 
   old_n_spo2=0.0;
 
+#ifdef DEBUG
   while(Serial.available()==0)  //wait until user presses a key
   {
     Serial.println(F("Press any key to start conversion"));
@@ -156,6 +178,7 @@ void setup() {
   uch_dummy=Serial.read();
   Serial.print(F("Time[s]\tSpO2\tHR\tClock\tRatio\tCorr"));
   Serial.println("");
+#endif // DEBUG
   
   timeStart=millis();
 }
@@ -205,47 +228,50 @@ void loop() {
 
   //save samples and calculation result to SD card
   if(ch_hr_valid && ch_spo2_valid) { 
+  #ifdef DEBUG
     Serial.print(elapsedTime);
     Serial.print("\t");
     Serial.print(n_spo2);
     Serial.print("\t");
     Serial.print(n_heart_rate, DEC);
     Serial.print("\t");
-  
-  #ifdef SEND_DATA_SIGFOX
-   msg.spo2 = convertoFloatToUInt16(n_spo2, SPO2_MAX);
-   msg.heart_rate = n_heart_rate;
-  #endif //SEND_DATA_SIGFOX
-  
     Serial.print(hr_str);
     Serial.print("\t");
     Serial.print(ratio);
     Serial.print("\t");
     Serial.print(correl);
+  #endif // DEBUG
 
   #ifdef USE_OLED  
     oled.clear();
-    oled.println("MEASURE DONE!");
+    oled.set1X();
+    oled.println("MEASURE DONE");
     oled.println();
     oled.set2X();
     oled.print("Spo2:");
     oled.println(n_spo2);
     oled.print("HR:");
-    oled.print(n_heart_rate);
-    oled.set1X();
+    oled.println(n_heart_rate);;
   #endif // USE_OLED 
     
   #ifdef SEND_DATA_SIGFOX
+    oled.set1X();
+    oled.println();
+    oled.print("Sending data...");
+    msg.spo2 = convertoFloatToUInt16(n_spo2, SPO2_MAX);
+    msg.heart_rate = n_heart_rate;
     msg.ratio = convertoFloatToUInt16(ratio, RATIO_MAX);
     msg.correl = convertoFloatToUInt16(correl, CORREL_MAX);
     
     //TO DELETE - FOR DEBUG
+  #ifdef DEBUG
     Serial.println();
     Serial.println("Sigfox attributs after conversion to uint:");
     Serial.print("SPO2 = "); Serial.println(msg.spo2, DEC);
     Serial.print("HR = "); Serial.println(msg.heart_rate, DEC);
     Serial.print("RATIO = "); Serial.println(msg.ratio, DEC);
     Serial.print("CORREL = "); Serial.println(msg.correl, DEC);
+  #endif //DEBUG
     
     // Start the module
     SigFox.begin();
@@ -257,19 +283,28 @@ void loop() {
     SigFox.beginPacket();
     SigFox.write((uint8_t*)&msg, 12);
     msg.lastMessageStatus = SigFox.endPacket();
-    #ifdef DEBUG
+  #ifdef DEBUG
     Serial.println();
     Serial.println("Sigfox SEND STATUS : " + String(msg.lastMessageStatus));
-    #endif
+  #endif //DEBUG
     SigFox.end(); 
+     
+  #ifdef USE_OLED  
+    oled.setCursor(0, oled.row());
+    oled.clearToEOL();
+    oled.setCursor(0, oled.row());
+    oled.print("Data sent");
+  #endif // USE_OLED 
   #endif //SEND_DATA_SIGFOX 
 
   #ifdef ONE_SHOT
     // spin forever, so we can test that the backend is behaving correctly
     while (1) {};
   #endif
-  
+
+  #ifdef DEBUG
     Serial.println("");
+  #endif
 
     old_n_spo2=n_spo2;
   }
