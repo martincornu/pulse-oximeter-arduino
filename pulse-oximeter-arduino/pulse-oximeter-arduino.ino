@@ -54,7 +54,6 @@
 #ifdef SEND_DATA_SIGFOX
   #include <ArduinoLowPower.h>
   #include <SigFox.h>
-  #include "conversions.h"
 #endif
 
 #ifdef USE_OLED
@@ -80,12 +79,8 @@ uint8_t uch_dummy,k;
       for more details
   */
   typedef struct __attribute__ ((packed)) sigfox_message {
-    uint8_t status;
     uint16_t spo2;
-    uint16_t ratio;
-    uint16_t correl;
     uint16_t heart_rate;
-    uint8_t lastMessageStatus;
   } SigfoxMessage;
   
   // stub for message which will be sent
@@ -133,10 +128,7 @@ void setup() {
   delay(1000);
   maxim_max30102_read_reg(REG_INTR_STATUS_1,&uch_dummy);  //Reads/clears the interrupt status register
   uch_maxinit_ret = (uint8_t) maxim_max30102_init();  //initialize the MAX30102
-#ifdef SEND_DATA_SIGFOX
-  msg.status = uch_maxinit_ret; 
-#endif //SEND_DATA_SIGFOX
-
+  
   if (0 == uch_maxinit_ret) {
     #ifdef DEBUG
     Serial.println("Sensor MAX30102 init FAIL.");
@@ -226,7 +218,7 @@ void loop() {
   Serial.println("------");
 #endif // DEBUG
 
-  //save samples and calculation result to SD card
+  //display and/or send data if they are valid
   if(ch_hr_valid && ch_spo2_valid) { 
   #ifdef DEBUG
     Serial.print(elapsedTime);
@@ -258,10 +250,8 @@ void loop() {
     oled.set1X();
     oled.println();
     oled.print("Sending data...");
-    msg.spo2 = convertoFloatToUInt16(n_spo2, SPO2_MAX);
+    msg.spo2 = (uint16_t) (n_spo2 * 100);
     msg.heart_rate = n_heart_rate;
-    msg.ratio = convertoFloatToUInt16(ratio, RATIO_MAX);
-    msg.correl = convertoFloatToUInt16(correl, CORREL_MAX);
     
     //TO DELETE - FOR DEBUG
   #ifdef DEBUG
@@ -269,8 +259,6 @@ void loop() {
     Serial.println("Sigfox attributs after conversion to uint:");
     Serial.print("SPO2 = "); Serial.println(msg.spo2, DEC);
     Serial.print("HR = "); Serial.println(msg.heart_rate, DEC);
-    Serial.print("RATIO = "); Serial.println(msg.ratio, DEC);
-    Serial.print("CORREL = "); Serial.println(msg.correl, DEC);
   #endif //DEBUG
     
     // Start the module
@@ -282,19 +270,20 @@ void loop() {
     delay(1);
     SigFox.beginPacket();
     SigFox.write((uint8_t*)&msg, 12);
-    msg.lastMessageStatus = SigFox.endPacket();
-  #ifdef DEBUG
-    Serial.println();
-    Serial.println("Sigfox SEND STATUS : " + String(msg.lastMessageStatus));
-  #endif //DEBUG
+    SigFox.endPacket();
     SigFox.end(); 
-     
+
+  // Display send info
   #ifdef USE_OLED  
     oled.setCursor(0, oled.row());
     oled.clearToEOL();
     oled.setCursor(0, oled.row());
     oled.print("Data sent");
-  #endif // USE_OLED 
+  #endif // USE_OLED
+  #ifdef DEBUG
+    Serial.println("Data sent");
+  #endif // DEBUG  
+  
   #endif //SEND_DATA_SIGFOX 
 
   #ifdef ONE_SHOT
