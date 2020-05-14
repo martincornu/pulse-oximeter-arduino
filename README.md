@@ -14,7 +14,7 @@ The data are sent over the Sigfox LPWA Network. No need to pair a smartphone, it
 
 Here is the circuit. Both OLED and MAX30102 are communicating with I2C. You can find the source file in the repo at hardware/sigfox-oximeter-proto.fzz
 
-![](D:\Projets\oximeter\pulse-oximeter-arduino\hardware\sigfox-oximeter-proto_bb.png)
+![circuit](https://github.com/martincornu/pulse-oximeter-arduino/blob/develop/hardware/sigfox-oximeter-proto_bb.png)
 
 ## The program
 
