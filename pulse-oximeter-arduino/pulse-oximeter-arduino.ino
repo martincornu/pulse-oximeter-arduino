@@ -1,32 +1,14 @@
 /********************************************************
 *
-* Project: MAXREFDES117#
-* Filename: RD117_ARDUINO.ino
-* Description: This module contains the Main application for the MAXREFDES117 example program.
+* Project: IoT oximeter
+* Filename: pulse-oximeter-arduino.ino
+* Description: This program measure hear rate and spo2 from max30102 sensor and send data to Sigfox.
+*				It is easily customizable by commenting the different #define.
 *
 * Revision History:
 *\n 1-18-2016 Rev 01.00 GL Initial release.
-*\n 12-22-2017 Rev 02.00 Significantlly modified by Robert Fraczkiewicz
-*\n 08-22-2018 Rev 02.01 Added conditional compilation of the code related to ADALOGGER SD card operations
-*
-* --------------------------------------------------------------------
-*
-* This code follows the following naming conventions:
-*
-* char              ch_pmod_value
-* char (array)      s_pmod_s_string[16]
-* float             f_pmod_value
-* int32_t           n_pmod_value
-* int32_t (array)   an_pmod_value[16]
-* int16_t           w_pmod_value
-* int16_t (array)   aw_pmod_value[16]
-* uint16_t          uw_pmod_value
-* uint16_t (array)  auw_pmod_value[16]
-* uint8_t           uch_pmod_value
-* uint8_t (array)   auch_pmod_buffer[16]
-* uint32_t          un_pmod_value
-* int32_t *         pn_pmod_value
-*
+*\n 12-22-2017 Rev 02.00 Significantlly modified by Robert Fraczkiewicz (max algorithm)
+*\n 14-11-2020 Rev 03.00 Modified by Martin Cornu (oled, sigfox)
 * ------------------------------------------------------------------------- */
 
 #include <Arduino.h>
@@ -35,10 +17,10 @@
 #include "algorithm_by_RF.h"
 #include "max30102.h"
 
-#define DEBUG // Uncomment for debug output to the Serial stream
-//#define SEND_DATA_SIGFOX  //Uncomment if you want raw data to be send over sigfox network
+//#define DEBUG // Uncomment for debug output to the Serial stream
+#define SEND_DATA_SIGFOX  //Uncomment if you want raw data to be send over sigfox network
 #define ONE_SHOT  //Uncomment if you want a single measure + send and then stop program
-#define USE_OLED  //Uncomment if you do not want to use oled display
+#define USE_OLED  //Uncomment if you want to use oled display
 
 #ifdef SEND_DATA_SIGFOX
   #define SPO2_MAX    100
@@ -72,12 +54,6 @@ float old_n_spo2;  // Previous SPO2 value
 uint8_t uch_dummy,k;
 
 #ifdef SEND_DATA_SIGFOX
-  /*
-      WARNING - the structure we are going to send MUST
-      be declared "packed" otherwise we'll get padding mismatch
-      on the sent data - see http://www.catb.org/esr/structure-packing/#_structure_alignment_and_padding
-      for more details
-  */
   typedef struct __attribute__ ((packed)) sigfox_message {
     uint16_t spo2;
     uint16_t heart_rate;
@@ -109,10 +85,8 @@ void setup() {
     // (eg. solar panels or other energy harvesting methods)
     reboot();
   }
-
   //Send module to standby until we need to send a message
   SigFox.end();
-  
   #ifdef DEBUG
     // Enable debug prints and LED indication if we are testing
     SigFox.debug();
@@ -253,15 +227,15 @@ void loop() {
     msg.spo2 = (uint16_t) (n_spo2 * 100);
     msg.heart_rate = n_heart_rate;
     
-    //TO DELETE - FOR DEBUG
+    //Display values sent to sigfox
   #ifdef DEBUG
     Serial.println();
     Serial.println("Sigfox attributs after conversion to uint:");
-    Serial.print("SPO2 = "); Serial.println(msg.spo2, DEC);
-    Serial.print("HR = "); Serial.println(msg.heart_rate, DEC);
+    Serial.print("SPO2: "); Serial.println(msg.spo2, DEC);
+    Serial.print("HR: "); Serial.println(msg.heart_rate, DEC);
   #endif //DEBUG
     
-    // Start the module
+    // Start the sigfox module
     SigFox.begin();
     // Wait at least 30ms after first configuration (100ms before)
     delay(100);
@@ -269,11 +243,11 @@ void loop() {
     SigFox.status();
     delay(1);
     SigFox.beginPacket();
-    SigFox.write((uint8_t*)&msg, 12);
+    SigFox.write((uint8_t*)&msg, sizeof(msg));
     SigFox.endPacket();
     SigFox.end(); 
 
-  // Display send info
+  // Display send info on oled
   #ifdef USE_OLED  
     oled.setCursor(0, oled.row());
     oled.clearToEOL();
@@ -283,18 +257,16 @@ void loop() {
   #ifdef DEBUG
     Serial.println("Data sent");
   #endif // DEBUG  
-  
   #endif //SEND_DATA_SIGFOX 
 
   #ifdef ONE_SHOT
-    // spin forever, so we can test that the backend is behaving correctly
+    // spin forever
     while (1) {};
   #endif
-
   #ifdef DEBUG
     Serial.println("");
   #endif
-
+  
     old_n_spo2=n_spo2;
   }
 }
