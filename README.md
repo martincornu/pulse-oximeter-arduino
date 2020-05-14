@@ -14,6 +14,8 @@ The data are sent over the Sigfox LPWA Network. No need to pair a smartphone, it
 
 Here is the circuit. Both OLED and MAX30102 are communicating with I2C. You can find the source file in the repo at hardware/sigfox-oximeter-proto.fzz
 
+By default the interrupt (INT) pin of the MAX30102 is connected to the pin 10. You can change it in the code.
+
 ![circuit](https://github.com/martincornu/pulse-oximeter-arduino/blob/develop/hardware/sigfox-oximeter-proto_bb.png)
 
 ## The program
@@ -22,4 +24,10 @@ You can customize the program by comment/uncomment the #define at the beginning 
 
 If you wanna use OLED screen then you need to download the SSD1306Ascii library (available in the Arduino Library manager).
 
-Regarding the MAX30102 sensor I successfully ran it on SAMD21 MCU thanks to this great [repository](https://github.com/aromring/MAX30102_by_RF). It propose a re-written MAX30102 drivers and an algorithm with more accuracy measurement. All details are explained on this [instructable](https://www.instructables.com/id/Pulse-Oximeter-With-Much-Improved-Precision/).
+Regarding the MAX30102 sensor I successfully ran it on SAMD21 MCU thanks to this great [repository](https://github.com/aromring/MAX30102_by_RF). It proposes a rewritten MAX30102 driver and an algorithm with more accuracy measurement. All details are explained on this [instructable](https://www.instructables.com/id/Pulse-Oximeter-With-Much-Improved-Precision/).
+
+### Sigfox
+
+The data is sending over Sigfox network. It allows us to send 120 messages per day with a low power consumption whereas cellular or Wifi. 
+
+First of all, you need to register your device on the Sigfox backend. You can then send your data and create callbacks to use them as you wish.
