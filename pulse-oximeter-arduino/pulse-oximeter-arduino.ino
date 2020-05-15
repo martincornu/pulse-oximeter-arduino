@@ -56,7 +56,8 @@ uint8_t uch_dummy,k;
 #ifdef SEND_DATA_SIGFOX
   typedef struct __attribute__ ((packed)) sigfox_message {
     uint16_t spo2;
-    uint16_t heart_rate;
+    uint8_t heart_rate;
+    uint16_t  moduleTemp;
   } SigfoxMessage;
   
   // stub for message which will be sent
@@ -225,20 +226,14 @@ void loop() {
     oled.println();
     oled.print("Sending data...");
     msg.spo2 = (uint16_t) (n_spo2 * 100);
-    msg.heart_rate = n_heart_rate;
-    
-    //Display values sent to sigfox
-  #ifdef DEBUG
-    Serial.println();
-    Serial.println("Sigfox attributs after conversion to uint:");
-    Serial.print("SPO2: "); Serial.println(msg.spo2, DEC);
-    Serial.print("HR: "); Serial.println(msg.heart_rate, DEC);
-  #endif //DEBUG
+    msg.heart_rate = (uint8_t) n_heart_rate;
     
     // Start the sigfox module
     SigFox.begin();
     // Wait at least 30ms after first configuration (100ms before)
     delay(100);
+    // We can only read the module temperature before SigFox.end()
+    msg.moduleTemp = (uint16_t) (SigFox.internalTemperature() * 100);
     // Clears all pending interrupts
     SigFox.status();
     delay(1);
@@ -246,6 +241,15 @@ void loop() {
     SigFox.write((uint8_t*)&msg, sizeof(msg));
     SigFox.endPacket();
     SigFox.end(); 
+
+    //Display values sent to sigfox
+  #ifdef DEBUG
+    Serial.println();
+    Serial.println("Sigfox attributs after conversion to uint:");
+    Serial.print("SPO2: "); Serial.println(msg.spo2, DEC);
+    Serial.print("HR: "); Serial.println(msg.heart_rate, DEC);
+    Serial.print("moduleTemp: "); Serial.println(msg.moduleTemp, DEC);
+  #endif //DEBUG
 
   // Display send info on oled
   #ifdef USE_OLED  
