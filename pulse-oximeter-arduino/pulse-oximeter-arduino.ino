@@ -19,8 +19,9 @@
 
 //#define DEBUG // Uncomment for debug output to the Serial stream
 #define SEND_DATA_SIGFOX  //Uncomment if you want raw data to be send over sigfox network
-#define ONE_SHOT  //Uncomment if you want a single measure + send and then stop program
 #define USE_OLED  //Uncomment if you want to use oled display
+
+#define THRESHOLD 96  //SPO2 threshold in %. Send a message if measure is below.
 
 #ifdef SEND_DATA_SIGFOX
   #define SPO2_MAX    100
@@ -222,51 +223,59 @@ void loop() {
   #endif // USE_OLED 
     
   #ifdef SEND_DATA_SIGFOX
-    oled.set1X();
-    oled.println();
-    oled.print("Sending data...");
-    msg.spo2 = (uint16_t) (n_spo2 * 100);
-    msg.heart_rate = (uint8_t) n_heart_rate;
+    //Send data only if measure below Spo2 threshold
+    if (n_spo2 < THRESHOLD)
+    {
+      oled.set1X();
+      oled.println();
+      oled.print("Sending data...");
+      msg.spo2 = (uint16_t) (n_spo2 * 100);
+      msg.heart_rate = (uint8_t) n_heart_rate;
     
-    // Start the sigfox module
-    SigFox.begin();
-    // Wait at least 30ms after first configuration (100ms before)
-    delay(100);
-    // We can only read the module temperature before SigFox.end()
-    msg.moduleTemp = (uint16_t) (SigFox.internalTemperature() * 100);
-    // Clears all pending interrupts
-    SigFox.status();
-    delay(1);
-    SigFox.beginPacket();
-    SigFox.write((uint8_t*)&msg, sizeof(msg));
-    SigFox.endPacket();
-    SigFox.end(); 
+      // Start the sigfox module
+      SigFox.begin();
+      // Wait at least 30ms after first configuration (100ms before)
+      delay(100);
+      // We can only read the module temperature before SigFox.end()
+      msg.moduleTemp = (uint16_t) (SigFox.internalTemperature() * 100);
+      // Clears all pending interrupts
+      SigFox.status();
+      delay(1);
+      SigFox.beginPacket();
+      SigFox.write((uint8_t*)&msg, sizeof(msg));
+      SigFox.endPacket();
+      SigFox.end(); 
 
-    //Display values sent to sigfox
-  #ifdef DEBUG
-    Serial.println();
-    Serial.println("Sigfox attributs after conversion to uint:");
-    Serial.print("SPO2: "); Serial.println(msg.spo2, DEC);
-    Serial.print("HR: "); Serial.println(msg.heart_rate, DEC);
-    Serial.print("moduleTemp: "); Serial.println(msg.moduleTemp, DEC);
-  #endif //DEBUG
+      //Display values sent to sigfox
+    #ifdef DEBUG
+      Serial.println();
+      Serial.println("Sigfox attributs after conversion to uint:");
+      Serial.print("SPO2: "); Serial.println(msg.spo2, DEC);
+      Serial.print("HR: "); Serial.println(msg.heart_rate, DEC);
+      Serial.print("moduleTemp: "); Serial.println(msg.moduleTemp, DEC);
+    #endif //DEBUG
 
-  // Display send info on oled
-  #ifdef USE_OLED  
-    oled.setCursor(0, oled.row());
-    oled.clearToEOL();
-    oled.setCursor(0, oled.row());
-    oled.print("Data sent");
-  #endif // USE_OLED
-  #ifdef DEBUG
-    Serial.println("Data sent");
-  #endif // DEBUG  
+    // Display send info on oled
+    #ifdef USE_OLED  
+      oled.setCursor(0, oled.row());
+      oled.clearToEOL();
+      oled.setCursor(0, oled.row());
+      oled.print("Data sent");
+    #endif // USE_OLED
+    #ifdef DEBUG
+      Serial.println("Data sent");
+    #endif // DEBUG  
+    }
+    else
+    {
+      oled.set1X();
+      oled.println();
+      oled.print("It's all right");
+    }
   #endif //SEND_DATA_SIGFOX 
 
-  #ifdef ONE_SHOT
     // spin forever
     while (1) {};
-  #endif
   #ifdef DEBUG
     Serial.println("");
   #endif
